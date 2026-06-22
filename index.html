@@ -63,7 +63,7 @@
     <!-- Kotak Darurat Error -->
     <div id="error-catcher" style="display:none; position:fixed; inset:0; z-index:9999; background-color:#881337; flex-direction:column; align-items:center; justify-content:center; padding:1.5rem; text-align:center; color:white;">
         <i class="fas fa-exclamation-triangle" style="font-size:3rem; color:#fecdd3; margin-bottom:1rem;"></i>
-        <h2 style="font-size:1.5rem; font-weight:bold; margin-bottom:0.5rem;">Sistem Gagal Memuat (Gangguan Server)</h2>
+        <h2 style="font-size:1.5rem; font-weight:bold; margin-bottom:0.5rem;">Sistem Gagal Memuat</h2>
         <p id="error-message" style="background-color:#4c0519; padding:1rem; border-radius:0.5rem; font-family:monospace; font-size:0.875rem; max-width:100%; overflow-x:auto; margin-bottom:1rem;"></p>
         <button onclick="window.location.reload()" style="background-color:white; color:#881337; padding:0.5rem 1.5rem; border-radius:9999px; font-weight:bold; border:none; cursor:pointer;">Muat Ulang Paksa</button>
     </div>
@@ -78,15 +78,38 @@
     <div id="app-container" class="h-screen w-screen flex overflow-hidden">
     </div>
 
-    <!-- 2. CORE LOGIC SCRIPT -->
+    <!-- 2. CORE LOGIC SCRIPT API (VERCEL EDITION) -->
     <script>
-        // Fallback untuk SweetAlert
+        // === PENTING: GANTI DENGAN URL WEB APP GOOGLE ANDA ===
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbxzWJCKT6eS4siMjZP7cefj3v0ljxFrKkMQTegllh7wMm4XoygLYG3WGhu1aEiUKPBR/exec";
+        // ======================================================
+
+        // Jembatan Fetch API ke Google Backend
+        async function apiCall(actionName, payloadData = {}) {
+            try {
+                if (GAS_URL === "ISI_URL_GOOGLE_WEB_APP_ANDA_DISINI") {
+                    throw new Error("URL API Belum Dikonfigurasi di file Index.html (Vercel)");
+                }
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Wajib text/plain agar tidak diblok CORS Google
+                    body: JSON.stringify({ action: actionName, data: payloadData }),
+                    redirect: 'follow'
+                });
+                
+                const json = await response.json();
+                if (json.status === 'error') throw new Error(json.message);
+                return json.result;
+            } catch (err) {
+                throw err;
+            }
+        }
+
         function safeSwal(title, text, icon) {
             if (typeof Swal !== 'undefined') { Swal.fire(title, text, icon); } 
             else { alert(title + (text ? "\n" + text : "")); }
         }
 
-        // --- GLOBAL STATE (MENGGUNAKAN VAR AGAR KEBAL ERROR DOUBLE DECLARATION) ---
         var STATE = {
             user: null, role: null, currentView: 'login', token: null,
             employeeData: null, cache: { PendingCounts: {izin: 0, absen: 0, shift: 0, total: 0}, SisaCuti: 12 }
@@ -112,7 +135,6 @@
             });
         } catch(e) {}
 
-        // --- HELPER FUNCTIONS ---
         function clearCache() { STATE.cache = { PendingCounts: (STATE.cache && STATE.cache.PendingCounts) ? STATE.cache.PendingCounts : {izin:0, absen:0, shift:0, total:0}, SisaCuti: 12 }; }
         
         function showLoader(text) {
@@ -164,7 +186,7 @@
         }
 
         window.toggleMobileMenu = function() {
-            if(typeof Swal === 'undefined') return alert("Modul gagal dimuat. Periksa koneksi.");
+            if(typeof Swal === 'undefined') return alert("Modul gagal dimuat.");
             var pendingCounts = STATE.cache['PendingCounts'] || {shift: 0};
             var shiftBadge = pendingCounts.shift > 0 ? '<div class="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-lg border border-rose-700">' + pendingCounts.shift + '</div>' : '';
 
@@ -277,11 +299,8 @@
             showLoader("Memuat Dashboard..."); clearCache(); 
             if(!STATE.employeeData && (STATE.role === 'Super Admin' || STATE.role === 'HRD')) { STATE.employeeData = { NIK: 'ADM-000', NamaLengkap: STATE.user || 'Administrator' }; }
             
-            if(typeof google === 'undefined') return hideLoader();
-            
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){ 
+            apiCall('getDashboardData', { role: STATE.role, nik: STATE.employeeData ? STATE.employeeData.NIK : null })
+                .then(function(data) {
                     hideLoader(); 
                     
                     STATE.cache['SisaCuti'] = data.SisaCuti !== undefined ? data.SisaCuti : 12;
@@ -333,7 +352,8 @@
                             new Chart(document.getElementById('dashChart'), { type: 'line', data: { labels: data.ChartLabels, datasets: [{ label: 'Hadir', data: data.ChartHadir, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.4, fill: true }, { label: 'Terlambat', data: data.ChartTerlambat, borderColor: '#f43f5e', tension: 0.4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#cbd5e1' } } }, scales: { y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } } }); 
                         } catch(e) {}
                     }
-                }).getDashboardData(STATE.role, STATE.employeeData ? STATE.employeeData.NIK : null);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         function loadAttendanceUI(container) {
@@ -359,19 +379,17 @@
                     function(position){
                         var d = new Date(); var payload = { Tanggal: d.toISOString().split('T')[0], NIK: STATE.employeeData.NIK, Nama: STATE.employeeData.NamaLengkap, SelfieData: photoData };
                         showLoader('Memproses Clock ' + type + '...');
-                        if(typeof google === 'undefined') return hideLoader();
+                        
                         if(type === 'IN') { 
                             payload.JamMasuk = d.toLocaleTimeString('id-ID', {hour12:false}); payload.LatIn = position.coords.latitude; payload.LngIn = position.coords.longitude; 
-                            google.script.run
-                                .withFailureHandler(function(err){ hideLoader(); safeSwal('Gagal', String(err), 'error'); })
-                                .withSuccessHandler(function(res){ hideLoader(); safeSwal('Berhasil', res.message, 'success'); navigate('dashboard'); })
-                                .clockIn(payload); 
+                            apiCall('clockIn', payload)
+                                .then(function(res) { hideLoader(); safeSwal('Berhasil', res.message, 'success'); navigate('dashboard'); })
+                                .catch(function(err) { hideLoader(); safeSwal('Gagal', String(err), 'error'); });
                         } else { 
                             payload.JamPulang = d.toLocaleTimeString('id-ID', {hour12:false}); payload.LatOut = position.coords.latitude; payload.LngOut = position.coords.longitude; 
-                            google.script.run
-                                .withFailureHandler(function(err){ hideLoader(); safeSwal('Gagal', String(err), 'error'); })
-                                .withSuccessHandler(function(res){ hideLoader(); safeSwal('Berhasil', res.message, 'success'); navigate('dashboard'); })
-                                .clockOut(payload); 
+                            apiCall('clockOut', payload)
+                                .then(function(res) { hideLoader(); safeSwal('Berhasil', res.message, 'success'); navigate('dashboard'); })
+                                .catch(function(err) { hideLoader(); safeSwal('Gagal', String(err), 'error'); });
                         }
                     },
                     function(error){ hideLoader(); safeSwal('GPS Error', 'Akses lokasi ditolak.', 'error'); }, { enableHighAccuracy: true, timeout: 10000 }
@@ -381,10 +399,9 @@
 
         function loadMyAttendanceUI(container) {
             showLoader("Memuat Log..."); var month = new Date().toISOString().substring(0,7);
-            if(typeof google === 'undefined') return hideLoader();
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){
+            
+            apiCall('getMyAttendanceLog', { nik: STATE.employeeData.NIK, month: month })
+                .then(function(data) {
                     hideLoader(); 
                     var html = '<div class="max-w-3xl mx-auto"><div class="flex justify-between items-end mb-4"><h2 class="text-xl font-bold">Log Bulan Ini</h2><button onclick="requestKoreksi()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded-lg font-bold">Koreksi Absen</button></div><div class="space-y-3">';
                     if(data.length === 0) html += '<p class="text-center text-slate-400 py-10">Belum ada data absen.</p>';
@@ -395,7 +412,8 @@
                         html += '<div class="glass-panel p-4 rounded-xl flex justify-between items-center"><div><p class="text-white font-bold mb-1">' + r.Tanggal + '</p><div class="text-xs text-slate-400 grid grid-cols-2 gap-4"><span>In: <strong class="' + txtColor + '">' + r.JamMasuk + '</strong></span><span>Out: <strong>' + r.JamPulang + '</strong></span></div>' + reqBadge + '</div></div>';
                     });
                     container.innerHTML = html + '</div></div>';
-                }).getMyAttendanceLog(STATE.employeeData.NIK, month);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         window.requestKoreksi = function() {
@@ -414,10 +432,9 @@
             }).then(function(res){ 
                 if(res.isConfirmed && res.value.Tanggal && res.value.Jam) { 
                     showLoader("Mengirim..."); 
-                    google.script.run
-                        .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                        .withSuccessHandler(function(m){ hideLoader(); if(Toast) Toast.fire({icon: 'success', title: m.message}); navigate('my-attendance'); })
-                        .submitAttendanceRequest(res.value); 
+                    apiCall('submitAttendanceRequest', res.value)
+                        .then(function(m) { hideLoader(); if(Toast) Toast.fire({icon: 'success', title: m.message}); navigate('my-attendance'); })
+                        .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
                 } 
             });
         }
@@ -430,8 +447,6 @@
         }
 
         window.submitLeaveForm = function() {
-            if(typeof google === 'undefined') return alert("Google API Tidak Ditemukan");
-            
             var jenis = document.getElementById('l-jenis').value;
             var sisa = STATE.cache.SisaCuti !== undefined ? STATE.cache.SisaCuti : 12;
             
@@ -447,17 +462,15 @@
                 var reader = new FileReader(); 
                 reader.onload = function(e) { 
                     payload.LampiranBase64 = e.target.result; payload.LampiranName = fileInput.files[0].name; 
-                    google.script.run
-                        .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                        .withSuccessHandler(function(res){ hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
-                        .submitLeave(payload); 
+                    apiCall('submitLeave', payload)
+                        .then(function(res) { hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
+                        .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
                 }; 
                 reader.readAsDataURL(fileInput.files[0]); 
             } else { 
-                google.script.run
-                    .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                    .withSuccessHandler(function(res){ hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
-                    .submitLeave(payload); 
+                apiCall('submitLeave', payload)
+                    .then(function(res) { hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
+                    .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
             }
         }
 
@@ -469,10 +482,10 @@
             var payload = { TanggalMulai: document.getElementById('s-start').value, TanggalSelesai: document.getElementById('s-end').value, ShiftAwal: document.getElementById('s-awal').value, ShiftTujuan: document.getElementById('s-tujuan').value, Alasan: document.getElementById('s-alasan').value, NIK: STATE.employeeData.NIK, Nama: STATE.employeeData.NamaLengkap || STATE.user };
             if(!payload.TanggalMulai || !payload.ShiftTujuan) { if(Toast) Toast.fire({icon: 'warning', title: 'Lengkapi form'}); else alert('Lengkapi Form'); return; }
             showLoader("Mengirim..."); 
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(res){ hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
-                .submitShiftRequest(payload);
+            
+            apiCall('submitShiftRequest', payload)
+                .then(function(res) { hideLoader(); if(Toast) Toast.fire({icon:'success', title:res.message}); navigate('dashboard'); })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         function loadSlipUI(container) {
@@ -481,10 +494,8 @@
 
         function loadApprovalUI(container, sheetName) {
             showLoader('Memuat Data...');
-            if(typeof google === 'undefined') return hideLoader();
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){
+            apiCall('getRecords', { sheetName: sheetName })
+                .then(function(data) {
                     hideLoader(); var pendingData = data.filter(function(r){ return r.StatusHRD === 'Pending' || r.StatusHRD === ''; });
                     var html = '<div class="max-w-4xl mx-auto"><h2 class="text-2xl font-bold mb-6 text-white"><i class="fas fa-check-double text-blue-400 mr-2"></i>Approval</h2>';
                     if(pendingData.length === 0) { container.innerHTML = html + '<div class="glass-panel p-10 text-center rounded-2xl"><p class="text-slate-400">Tidak ada antrean approval.</p></div></div>'; return; }
@@ -498,23 +509,22 @@
                         html += '<div class="glass-panel p-5 rounded-2xl flex flex-col md:flex-row justify-between border-l-4 border-amber-500"><div><span class="text-xs bg-amber-500/20 text-amber-400 px-2 py-1 rounded font-bold uppercase">' + jns + '</span><h4 class="text-lg font-bold text-white mt-2">' + nm + '</h4><p class="text-sm text-slate-400 mt-1">' + tgl + '</p><p class="text-sm text-slate-300 mt-2 bg-slate-800 p-2 rounded">"' + ket + '"</p></div><div class="flex gap-2 mt-4 md:mt-0"><button onclick="processApprove(\'' + sheetName + '\', \'' + r.ID + '\', \'Approved\')" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold">ACC</button><button onclick="processApprove(\'' + sheetName + '\', \'' + r.ID + '\', \'Rejected\')" class="bg-rose-600 text-white px-6 py-2 rounded-lg font-bold">Tolak</button></div></div>';
                     });
                     container.innerHTML = html + '</div></div>';
-                }).getRecords(sheetName);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         window.processApprove = function(sheet, id, status) {
-            showLoader('Memproses...'); var actionName = sheet === 'Leave' ? 'processLeave' : (sheet === 'AttendanceRequests' ? 'processAttendanceRequest' : 'processShiftRequest');
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(res){ hideLoader(); if(Toast) Toast.fire({icon: 'success', title: res.message}); navigate(STATE.currentView); })
-                [actionName](id, STATE.role, status);
+            showLoader('Memproses...'); 
+            var actionName = sheet === 'Leave' ? 'processLeave' : (sheet === 'AttendanceRequests' ? 'processAttendanceRequest' : 'processShiftRequest');
+            apiCall(actionName, { id: id, role: STATE.role, status: status })
+                .then(function(res) { hideLoader(); if(Toast) Toast.fire({icon: 'success', title: res.message}); navigate(STATE.currentView); })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         function loadCRUDUI(container, sheetName) {
             showLoader('Memuat Data ' + sheetName + '...');
-            if(typeof google === 'undefined') return hideLoader();
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){
+            apiCall('getRecords', { sheetName: sheetName })
+                .then(function(data) {
                     hideLoader();
                     var columns = SCHEMA[sheetName];
                     var thead = columns.map(function(c){ return '<th class="p-4 text-left font-semibold text-slate-400">' + c + '</th>'; }).join('');
@@ -530,7 +540,8 @@
                     var htmlTbl = '<div class="max-w-7xl mx-auto"><div class="flex justify-between items-center mb-6"><h2 class="text-2xl font-bold text-white capitalize"><i class="fas fa-table text-blue-400 mr-2"></i>Tabel ' + sheetName + '</h2><button onclick="addRecord(\'' + sheetName + '\')" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-blue-500/30"><i class="fas fa-plus mr-2"></i>Tambah Data</button></div><div class="glass-panel rounded-2xl overflow-hidden border border-slate-700"><div class="overflow-x-auto hide-scrollbar"><table class="w-full text-left"><thead class="bg-slate-800/50 text-xs uppercase tracking-wider border-b border-slate-700"><tr><th class="p-4 text-left font-semibold text-slate-400 w-24">Aksi</th>' + thead + '</tr></thead><tbody class="divide-y divide-slate-800">' + tbody + '</tbody></table>' + (data.length === 0 ? '<div class="p-10 text-center text-slate-500">Tidak ada data.</div>' : '') + '</div></div></div>';
                     
                     container.innerHTML = htmlTbl;
-                }).getRecords(sheetName);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         window.addRecord = function(sheetName) {
@@ -543,10 +554,9 @@
             }).then(function(res){ 
                 if (res.isConfirmed) { 
                     showLoader("Menyimpan..."); 
-                    google.script.run
-                        .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                        .withSuccessHandler(function(r){ hideLoader(); if(Toast) Toast.fire({icon: 'success', title: r.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
-                        .insertRecord(sheetName, res.value); 
+                    apiCall('insertRecord', { sheetName: sheetName, payload: res.value })
+                        .then(function(r) { hideLoader(); if(Toast) Toast.fire({icon: 'success', title: r.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
+                        .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
                 } 
             });
         }
@@ -556,10 +566,9 @@
             Swal.fire({ title: 'Yakin Hapus?', text: "Data tidak bisa dikembalikan!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#e11d48', confirmButtonText: 'Ya, Hapus!', background: '#1e293b', color: '#fff' }).then(function(result){
                 if (result.isConfirmed) { 
                     showLoader("Menghapus..."); 
-                    google.script.run
-                        .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                        .withSuccessHandler(function(res){ hideLoader(); if(Toast) Toast.fire({icon: 'success', title: res.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
-                        .deleteRecord(sheetName, id); 
+                    apiCall('deleteRecord', { sheetName: sheetName, id: id })
+                        .then(function(res) { hideLoader(); if(Toast) Toast.fire({icon: 'success', title: res.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
+                        .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
                 }
             });
         }
@@ -567,9 +576,8 @@
         window.editRecord = function(sheetName, id) {
             if(typeof Swal === 'undefined') return alert("Library modul belum termuat.");
             showLoader();
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){
+            apiCall('getRecords', { sheetName: sheetName })
+                .then(function(data) {
                     hideLoader();
                     var record = data.find(function(r){ return r.ID === id; });
                     if(!record) return safeSwal('Error', 'Data tidak ditemukan', 'error');
@@ -582,13 +590,13 @@
                     }).then(function(res){ 
                         if (res.isConfirmed) { 
                             showLoader("Update..."); 
-                            google.script.run
-                                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                                .withSuccessHandler(function(r){ hideLoader(); if(Toast) Toast.fire({icon: 'success', title: r.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
-                                .updateRecord(sheetName, id, res.value); 
+                            apiCall('updateRecord', { sheetName: sheetName, id: id, payload: res.value })
+                                .then(function(r) { hideLoader(); if(Toast) Toast.fire({icon: 'success', title: r.message}); loadCRUDUI(document.getElementById('main-content'), sheetName); })
+                                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
                         } 
                     });
-                }).getRecords(sheetName);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         function loadPayrollEngineUI(container) {
@@ -601,10 +609,9 @@
             Swal.fire({ title: 'Jalankan Payroll?', text: 'Menghitung gaji untuk periode ' + m + '.', icon: 'info', showCancelButton: true, confirmButtonColor: '#4f46e5', confirmButtonText: 'Mulai Kalkulasi', background: '#1e293b', color: '#fff' }).then(function(result){
                 if (result.isConfirmed) { 
                     showLoader("Kalkulasi Payroll Berjalan..."); 
-                    google.script.run
-                        .withFailureHandler(function(err){ hideLoader(); safeSwal('Gagal', String(err), 'error'); })
-                        .withSuccessHandler(function(res){ hideLoader(); safeSwal('Selesai!', res.message, 'success'); navigate('Payroll'); })
-                        .generatePayrollData(m); 
+                    apiCall('generatePayrollData', { month: m })
+                        .then(function(res) { hideLoader(); safeSwal('Selesai!', res.message, 'success'); navigate('Payroll'); })
+                        .catch(function(err) { hideLoader(); safeSwal('Gagal', String(err), 'error'); });
                 }
             });
         }
@@ -616,9 +623,8 @@
         window.generateReport = function() {
             var t = document.getElementById('rep-type').value, s = document.getElementById('rep-start').value, e = document.getElementById('rep-end').value;
             showLoader("Menarik Data...");
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(data){
+            apiCall('getReportData', { type: t, start: s, end: e })
+                .then(function(data) {
                     hideLoader(); var html = '';
                     if(data.length === 0) html = '<p class="text-center text-slate-400">Tidak ada data untuk periode ini.</p>';
                     else {
@@ -628,7 +634,8 @@
                         html = '<div class="border border-slate-700 rounded-xl overflow-hidden"><table class="w-full text-slate-300"><thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody></table></div>';
                     }
                     document.getElementById('rep-result').innerHTML = html;
-                }).getReportData(t, s, e);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         function renderLogin() {
@@ -644,18 +651,18 @@
         }
 
         window.doLogin = function() {
-            if(typeof google === 'undefined') return alert("Google API Script gagal terhubung.");
             var e = document.getElementById('login-email').value, p = document.getElementById('login-pass').value;
             showLoader("Otentikasi Kredensial...");
-            google.script.run
-                .withFailureHandler(function(err){ hideLoader(); safeSwal('Error Server', String(err), 'error'); })
-                .withSuccessHandler(function(res){
+            
+            apiCall('login', { email: e, password: p })
+                .then(function(res) {
                     if(res.success) { 
                         STATE.user = res.name; STATE.role = res.role; STATE.token = res.token; STATE.employeeData = res.employee; 
                         navigate('dashboard'); if(Toast) Toast.fire({icon: 'success', title: 'Selamat datang, ' + res.name}); 
                     }
                     else { hideLoader(); safeSwal('Akses Ditolak', res.message, 'error'); }
-                }).login(e, p);
+                })
+                .catch(function(err) { hideLoader(); safeSwal('Error Server', String(err), 'error'); });
         }
 
         window.doLogout = function() { 
@@ -669,8 +676,8 @@
             window.isBooted = true;
             try {
                 var initL = document.getElementById('init-loader');
-                if(initL) initL.style.display = 'none'; // Hilangkan Loading Seketika
-                navigate('login'); // Buka Login
+                if(initL) initL.style.display = 'none';
+                navigate('login');
             } catch (e) {
                 var errCatcher = document.getElementById('error-catcher');
                 if(errCatcher) {
@@ -684,4 +691,3 @@
     </script>
 </body>
 </html>
-```eof
