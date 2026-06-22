@@ -1,15 +1,61 @@
 /**
- * CV JAMPE AGENG TRADE - HR SYSTEM PROFESSIONAL (ULTIMATE STABLE VERSION)
+ * CV JAMPE AGENG TRADE - HR SYSTEM PROFESSIONAL (REST API BACKEND)
  * Role: Senior Google Apps Script Developer & Database Architect
  */
 
 const FOLDER_NAME = "HRIS_PRO_UPLOADS";
 
+// Menerima request GET biasa (hanya untuk cek status API di browser)
+// Jika Anda melihat "HRIS REST API is Running Active." di browser, berarti ini bekerja.
 function doGet(e) {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('CV JAMPE AGENG TRADE (HR SYSTEM)')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return ContentService.createTextOutput("HRIS REST API is Running Active.")
+                       .setMimeType(ContentService.MimeType.TEXT);
+}
+
+// Menerima request POST dari Vercel (Frontend)
+function doPost(e) {
+  // Tambahkan Header CORS untuk keamanan (opsional tapi disarankan)
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
+  };
+
+  try {
+    const request = JSON.parse(e.postData.contents);
+    const action = request.action;
+    const payload = request.data;
+    let result;
+
+    // Routing (Mengarahkan fungsi sesuai request dari Frontend)
+    switch(action) {
+      case 'login': result = login(payload.email, payload.password); break;
+      case 'clockIn': result = clockIn(payload); break;
+      case 'clockOut': result = clockOut(payload); break;
+      case 'getMyAttendanceLog': result = getMyAttendanceLog(payload.nik, payload.month); break;
+      case 'submitAttendanceRequest': result = submitAttendanceRequest(payload); break;
+      case 'submitShiftRequest': result = submitShiftRequest(payload); break;
+      case 'submitLeave': result = submitLeave(payload); break;
+      case 'getRecords': result = getRecords(payload.sheetName); break;
+      case 'processAttendanceRequest': result = processAttendanceRequest(payload.id, payload.role, payload.status); break;
+      case 'processShiftRequest': result = processShiftRequest(payload.id, payload.role, payload.status); break;
+      case 'processLeave': result = processLeave(payload.id, payload.role, payload.status); break;
+      case 'insertRecord': result = insertRecord(payload.sheetName, payload.payload); break;
+      case 'updateRecord': result = updateRecord(payload.sheetName, payload.id, payload.payload); break;
+      case 'deleteRecord': result = deleteRecord(payload.sheetName, payload.id); break;
+      case 'generatePayrollData': result = generatePayrollData(payload.month); break;
+      case 'getReportData': result = getReportData(payload.type, payload.start, payload.end); break;
+      case 'getDashboardData': result = getDashboardData(payload.role, payload.nik); break;
+      case 'setupDatabase': result = setupDatabase(); break;
+      default: throw new Error("Aksi tidak dikenali oleh API: " + action);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", result: result }))
+                         .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.message }))
+                         .setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 const SCHEMA = {
@@ -73,7 +119,7 @@ function setupDatabase() {
     if(usersSheet && usersSheet.getDataRange().getValues().length <= 1) {
       usersSheet.appendRow([generateUUID(), "admin@jampeageng.com", "admin123", "Super Admin", "", ""]);
     }
-    return {success: true, message: "Database telah dipindai dan diperbarui otomatis (Auto-Heal)!"};
+    return {success: true, message: "Database telah dipindai dan diperbarui otomatis!"};
   } catch(e) {
     throw new Error("Gagal Setup Database: " + e.message);
   }
@@ -81,7 +127,7 @@ function setupDatabase() {
 
 function getDb_(sheetName) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  if(!sheet) throw new Error(`Tabel ${sheetName} tidak ditemukan. Silakan jalankan setupDatabase().`);
+  if(!sheet) throw new Error(Tabel ${sheetName} tidak ditemukan.);
   
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -216,7 +262,7 @@ function clockIn(payload) {
     let d = calculateDistance(payload.LatIn, payload.LngIn, locations[i].Latitude, locations[i].Longitude);
     if(d <= (parseFloat(locations[i].Radius) || 100)) { allowed = true; distance = Math.round(d); break; }
   }
-  if(!allowed) throw new Error(`Absensi ditolak Geofencing. Anda berada di luar radius kantor (${Math.round(calculateDistance(payload.LatIn, payload.LngIn, locations[0].Latitude, locations[0].Longitude))}m).`);
+  if(!allowed) throw new Error(Absensi ditolak Geofencing. Anda berada di luar radius kantor (${Math.round(calculateDistance(payload.LatIn, payload.LngIn, locations[0].Latitude, locations[0].Longitude))}m).);
   
   const shifts = getRecords("Shifts");
   let status = "Hadir", lateMins = 0;
@@ -229,9 +275,9 @@ function clockIn(payload) {
     }
   }
 
-  let photoUrl = uploadFileToDrive(payload.SelfieData, `IN_${payload.NIK}_${payload.Tanggal}.jpg`);
+  let photoUrl = uploadFileToDrive(payload.SelfieData, IN_${payload.NIK}_${payload.Tanggal}.jpg);
   insertRecord("Attendance", { Tanggal: payload.Tanggal, JamMasuk: payload.JamMasuk, Nama: payload.Nama, NIK: payload.NIK, LatIn: payload.LatIn, LngIn: payload.LngIn, JarakIn: distance, SelfieIn: photoUrl, StatusMasuk: status, TerlambatMenit: lateMins });
-  return { success: true, message: `Clock In sukses. Status Kehadiran: ${status}` };
+  return { success: true, message: Clock In sukses. Status Kehadiran: ${status} };
 }
 
 function clockOut(payload) {
@@ -240,7 +286,7 @@ function clockOut(payload) {
   if(!todayRecord) throw new Error("Anda belum melakukan Clock In hari ini.");
   if(todayRecord.JamPulang) throw new Error("Anda sudah melakukan Clock Out hari ini.");
 
-  let photoUrl = uploadFileToDrive(payload.SelfieData, `OUT_${payload.NIK}_${payload.Tanggal}.jpg`);
+  let photoUrl = uploadFileToDrive(payload.SelfieData, OUT_${payload.NIK}_${payload.Tanggal}.jpg);
   updateRecord("Attendance", todayRecord.ID, { JamPulang: payload.JamPulang, LatOut: payload.LatOut, LngOut: payload.LngOut, SelfieOut: photoUrl, StatusPulang: "Selesai" });
   
   const shifts = getRecords("Shifts");
@@ -271,7 +317,7 @@ function getMyAttendanceLog(nik, month) {
   let logData = [];
   
   for(let i=1; i<=daysInMonth; i++) {
-    let dateStr = `${y}-${m}-${String(i).padStart(2,'0')}`;
+    let dateStr = ${y}-${m}-${String(i).padStart(2,'0')};
     if(dateStr > Utilities.formatDate(new Date(), SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "yyyy-MM-dd")) break; 
     
     let att = atts.find(a => a.Tanggal === dateStr);
@@ -284,8 +330,8 @@ function getMyAttendanceLog(nik, month) {
       StatusMasuk: att ? (att.StatusMasuk || 'Hadir') : 'Belum Absen',
       JamPulang: att ? (att.JamPulang || '-') : '-',
       StatusPulang: att ? (att.StatusPulang || 'Selesai') : 'Belum Clock Out',
-      ReqMasuk: reqIn ? `Koreksi: ${reqIn.Jam} (${reqIn.StatusHRD})` : null,
-      ReqPulang: reqOut ? `Koreksi: ${reqOut.Jam} (${reqOut.StatusHRD})` : null
+      ReqMasuk: reqIn ? Koreksi: ${reqIn.Jam} (${reqIn.StatusHRD}) : null,
+      ReqPulang: reqOut ? Koreksi: ${reqOut.Jam} (${reqOut.StatusHRD}) : null
     });
   }
   return logData.reverse(); 
@@ -317,7 +363,7 @@ function processAttendanceRequest(id, role, status) {
       }
   }
   updateRecord("AttendanceRequests", id, upd);
-  return { success: true, message: `Koreksi Absensi di-${status}.` };
+  return { success: true, message: Koreksi Absensi di-${status}. };
 }
 
 function submitShiftRequest(payload) {
@@ -330,11 +376,10 @@ function processShiftRequest(id, role, status) {
   if(role === "Manager") upd.StatusManager = status;
   if(role === "HRD" || role === "Super Admin") upd.StatusHRD = status;
   updateRecord("ShiftRequests", id, upd);
-  return { success: true, message: `Permintaan Shift di-${status}.` };
+  return { success: true, message: Permintaan Shift di-${status}. };
 }
 
 function submitLeave(payload) {
-  // PENGAMAN BACKEND CUTI (TIDAK BISA DITEMBUS)
   if (payload.Jenis === "Cuti") {
       let year = String(payload.Tanggal).substring(0,4);
       let bal = getRecords("LeaveBalances").find(b => String(b.NIK) === String(payload.NIK) && String(b.Tahun) === year);
@@ -359,7 +404,6 @@ function processLeave(id, role, status) {
   if(role === "HRD" || role === "Super Admin") {
       upd.StatusHRD = status;
       
-      // LOGIKA PEMOTONGAN CUTI OTOMATIS
       if(status === 'Approved' && req.Jenis === 'Cuti') {
           let year = String(req.Tanggal).substring(0,4);
           let balDb = getDb_("LeaveBalances");
@@ -369,13 +413,12 @@ function processLeave(id, role, status) {
               let sisa = parseInt(bal.SisaCuti) - 1;
               updateRecord("LeaveBalances", bal.ID, { SisaCuti: sisa });
           } else {
-              // Jika ini cuti pertama di tahun ini, buat kuota (12) dan langsung potong 1 jadi (11)
               insertRecord("LeaveBalances", { NIK: req.NIK, Tahun: year, KuotaCuti: 12, SisaCuti: 11 });
           }
       }
   }
   updateRecord("Leave", id, upd);
-  return { success: true, message: `Dokumen Izin/Cuti di-${status}.` };
+  return { success: true, message: Dokumen Izin/Cuti di-${status}. };
 }
 
 function generatePayrollData(month) {
@@ -429,7 +472,7 @@ function generatePayrollData(month) {
         if(check) updateRecord("Payroll", check.ID, pyLoad);
         else insertRecord("Payroll", pyLoad);
       });
-      return { success: true, message: `Kalkulasi Payroll untuk ${emps.length} Karyawan periode ${month} selesai.` };
+      return { success: true, message: Kalkulasi Payroll untuk ${emps.length} Karyawan periode ${month} selesai. };
   } catch(e) { throw new Error(e.message); }
 }
 
@@ -465,16 +508,15 @@ function getDashboardData(role, nik) {
   if (role === "Karyawan") {
     let myAtts = atts.filter(a => String(a.NIK) === String(nik) && String(a.Tanggal).startsWith(month));
     
-    // Tarik Data Sisa Cuti dari Database
     let year = today.substring(0,4);
     let bal = getRecords("LeaveBalances").find(b => String(b.NIK) === String(nik) && String(b.Tahun) === year);
-    let sisaCuti = bal ? parseInt(bal.SisaCuti) : 12; // Default 12 jika belum pernah cuti tahun ini
+    let sisaCuti = bal ? parseInt(bal.SisaCuti) : 12;
 
     return {
       Hadir: myAtts.length, Terlambat: myAtts.filter(a => String(a.StatusMasuk || '').includes("Terlambat")).length,
       Izin: leaves.filter(l => String(l.NIK) === String(nik) && String(l.Tanggal).startsWith(month)).length,
       Lembur: overtimes.filter(o => String(o.NIK) === String(nik) && String(o.Tanggal).startsWith(month)).reduce((acc, o) => acc + parseFloat(o.JamLembur||0), 0),
-      SisaCuti: sisaCuti // Kirim ke antarmuka HTML
+      SisaCuti: sisaCuti
     };
   } else {
     let attReqs = getRecords("AttendanceRequests");
